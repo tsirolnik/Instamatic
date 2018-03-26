@@ -1,0 +1,30 @@
+{
+  "name": "instamatic",
+  "version": "0.0.1",
+  "description": "Instamatic - Instagram bot",
+  "main": "index.js",
+  "dependencies": {
+    "chrome-remote-interface": "^0.25.5",
+    "robotjs": "^0.5.1",
+    "winston": "^2.4.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tsirolnik/Instamatic.git"
+  },
+  "keywords": [
+    "instagram",
+    "bot",
+    "automatic"
+  ],
+  "author": "Yehonatan Tsirolnik",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/tsirolnik/Instamatic/issues"
+  },
+  "homepage": "https://github.com/tsirolnik/Instamatic#readme"
+}
