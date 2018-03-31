@@ -43,14 +43,31 @@ module.exports = class ChromeManager {
             });
     }
 
+
+    async goTo(url) {
+        await this.page.navigate({ url });
+    }
+
     async evaluate(js) {
         return await this.runtime.evaluate({ expression: js });
     }
 
-    async getNodeByXPath(xpath) {
+    async getNodesByXPath(xpath) {
+        await this.dom.getDocument();
         let { searchId, resultCount } = await this.dom.performSearch({ query: xpath });
-        console.log(resultCount);
-        return await this.dom.getSearchResults({ searchId, fromIndex: 0, toIndex: resultCount - 1 })[0];
+        if (resultCount < 1) return [];
+        let { nodeIds } = await this.dom.getSearchResults({
+            searchId,
+            fromIndex: 0,
+            toIndex: resultCount
+        });
+        let nodes = [];
+        for (let i = 0; i < nodeIds.length; i++) {
+            let nodeId = nodeIds[i];
+            let {attributes} = await this.dom.getAttributes({ nodeId });
+            nodes.push(attributes); 
+        }
+        return nodes;
     }
 
     async inputString(input) {
@@ -61,7 +78,7 @@ module.exports = class ChromeManager {
 
     async sendKey(keyCode) {
         await this.input.dispatchKeyEvent({ type: 'rawKeyDown',windowsVirtualKeyCode: keyCode  });
-    }
+        }
 }
 
 
