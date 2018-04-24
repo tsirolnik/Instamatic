@@ -8,7 +8,9 @@ module.exports = {
     },
 
     getUsername : async function(browser) {
-        await browser.evaluate(`document.querySelector('h1').innerText`);
+        let {result} = await browser.evaluate(`document.querySelector('h1').innerText`);
+        if(!result.type === 'string') throw new Error('Could not find username');
+        return result.value;
     },
 
     follow: async function(browser) {
