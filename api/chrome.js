@@ -48,6 +48,10 @@ module.exports = class ChromeManager {
         await this.page.navigate({ url });
     }
 
+    async goBack() {
+        await this.runtime.evaluate({expression: 'history.back();'});
+    }
+
     async evaluate(js) {
         return await this.runtime.evaluate({ expression: js });
     }
@@ -63,11 +67,28 @@ module.exports = class ChromeManager {
         });
         let nodes = [];
         for (let i = 0; i < nodeIds.length; i++) {
+            let nodeData = {attributes:{}, value:''};
             let nodeId = nodeIds[i];
-            let {attributes} = await this.dom.getAttributes({ nodeId });
-            nodes.push(attributes); 
+            let {node} = await this.dom.describeNode({nodeId});
+            if(node.attributes) {
+                let attributes = this.attrArrayToObject(node.attributes);
+                nodeData.attributes = attributes; 
+            }
+            nodeData.value = node.nodeValue;
+            nodeData.nodeId = nodeId;
+            nodes.push(nodeData); 
         }
         return nodes;
+    }
+
+    attrArrayToObject(arr) {
+        let obj = {};
+        for (let i = 0; i < arr.length/2; i+=2) {
+            const key = arr[i];
+            const val = arr[i+1];
+            obj[key] = val;
+        }
+        return obj;
     }
 
     async inputString(input) {
