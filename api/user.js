@@ -12,7 +12,7 @@ module.exports = {
     },
 
     follow: async function(browser) {
-        aawait browser.evaluate(`document.querySelector('._qv64e._gexxb._r9b8f._njrw0').click();`);
+        await browser.evaluate(`document.querySelector('._qv64e._gexxb._r9b8f._njrw0').click();`);
     }
 
 }
