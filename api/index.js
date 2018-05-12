@@ -4,6 +4,7 @@ const winston = require('winston');
 const ChromeManager = require('./chrome');
 const constants = require('./constants');
 const loginFunctions = require('./login');
+const user = require('./user');
 const readline = require('readline');
 
 const rl = readline.createInterface({
@@ -105,7 +106,6 @@ module.exports = class InstaMatic {
         }
         await this.sleep(3000);
         let nodes = await this.browser.getNodesByXPath('//main/article/div[2]/div/div/div/a');
-        console.log('B', nodes);
         let photos = [];
         for (let node of nodes) {
             // Push the href's value
@@ -116,7 +116,7 @@ module.exports = class InstaMatic {
 
     setComments(comments) {
         // Must pass an array
-        if(!Array.isArray(comments)) {
+        if (!Array.isArray(comments)) {
             throw new Error('Must pass an array to setComments');
         }
         this.comments = comments;
@@ -131,7 +131,7 @@ module.exports = class InstaMatic {
     }
 
     getRandomComment() {
-        if(!this.comments) return;
+        if (!this.comments) return;
         let randomPosition = Math.floor(Math.random() * this.comments.length);
         return this.comments[randomPosition];
     }
@@ -148,21 +148,24 @@ module.exports = class InstaMatic {
          */
         await this.browser.evaluate(`document.querySelector('._p6oxf._6p9ga').click();`);
         let nodes = await this.browser.getNodesByXPath(`//textarea[@placeholder = "Add a comment…"]`);
-        await this.browser.dom.focus({nodeId:nodes[0].nodeId});
+        await this.browser.dom.focus({ nodeId: nodes[0].nodeId });
         // Send the text's keys and an enter
         await this.browser.inputString(text + String.fromCharCode(13));
     }
 
     async follow() {
-        let nodes = await this.browser.getNodesByXPath(`//span[@class="_fd86t "]/text()`);
-        let followersString = nodes[1].value;
-        let followers = Number(followersString.replace(/,/g,''));
-        await this.browser.evaluate(`document.querySelector('._qv64e._gexxb._r9b8f._njrw0').click();`);
+        let number = await user.getFollowersNumber(this.browser);
+        console.log(number);
+
+        let userName = await user.getUsername(this.browser);
+        console.log(userName);
+       
+        await user.follow(this.browser);
     }
 
     async profile_url_from_post() {
-        let {result} = await this.browser.evaluate(`document.querySelector('._2g7d5.notranslate._iadoq').href;`);
-        if(result.type != 'string') {
+        let { result } = await this.browser.evaluate(`document.querySelector('._2g7d5.notranslate._iadoq').href;`);
+        if (result.type != 'string') {
             throw new Error('Couldn\'t find profile link');
         }
         let profileLink = result.value;
@@ -172,25 +175,25 @@ module.exports = class InstaMatic {
     async interact_with_tags(tags, maxInteractions = 10, onInteracted) {
         for (let tag of tags) {
             let posts = await this.getPostsForTag(tag, maxInteractions);
-            for(let post of posts) {
+            for (let post of posts) {
                 await this.browser.goTo(post);
                 await this.sleep(2000);
-                if(this.settings.shouldLike) {
+                if (this.settings.shouldLike) {
                     await this.like();
                     await this.sleep(500);
                 }
-                if(this.settings.shouldComment) {
+                if (this.settings.shouldComment) {
                     await this.comment(this.getRandomComment());
                     await this.sleep(500);
                 }
-                if(this.settings.shouldFollow) {
+                if (this.settings.shouldFollow) {
                     let userProfile = await this.profile_url_from_post();
                     await this.browser.goTo(userProfile);
                     await this.sleep(2000);
                     await this.follow();
                     await this.browser.goBack();
                 }
-                if(onInteracted) {
+                if (onInteracted) {
                     onInteracted();
                 }
                 await this.browser.goBack();
