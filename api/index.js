@@ -1,16 +1,18 @@
 
 const CDP = require('chrome-remote-interface');
 const winston = require('winston');
+const readline = require('readline');
 const ChromeManager = require('./chrome');
 const constants = require('./constants');
 const loginFunctions = require('./login');
 const user = require('./user');
-const readline = require('readline');
+const SqliteSaver = require('./saver-sqlite');
 
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
+
 
 
 const logger = new (winston.Logger)({
@@ -27,10 +29,16 @@ module.exports = class InstaMatic {
         this.settings = {
             username,
             password,
-            shouldLIke: true,
-            shouldComment: false,
-            shouldFollow: true
+            shouldLike: true,
+            shouldComment: true,
+            shouldFollow: true,
+            followSettings: {
+                minimumFollowers: null,
+                maximumFollowers: 2500,
+                blacklist: []
+            }
         };
+        this.saver = new SqliteSaver(`instamatic-${username}.db`);
     }
 
     async start(onReady) {
@@ -41,7 +49,7 @@ module.exports = class InstaMatic {
                 if (this.wasLoaded) return;
                 this.wasLoaded = true;
                 logger.info('Load event fired');
-                await this.sleep(3000);
+                await this.sleep(5000);
                 onReady(this);
             });
         });
@@ -56,7 +64,7 @@ module.exports = class InstaMatic {
         await loginFunctions.clickLogin(this.browser);
         await loginFunctions.setLoginDetailsOnLogin(this.settings.username, this.settings.password, this.browser);
         await loginFunctions.submitLogin(this.browser);
-        await this.sleep(3000);
+        await this.sleep(5000);
         if (await loginFunctions.isLoggedIn(this.settings.username, this.browser)) {
             logger.info('Logged in successfuly');
             return true;
@@ -127,7 +135,15 @@ module.exports = class InstaMatic {
     }
 
     setShouldComment(shouldComment) {
-        this.settings.shouldComment = true;
+        this.settings.shouldComment = shouldComment;
+    }
+
+    setShouldFollow(shouldFollow) {
+        this.settings.shouldFollow = shouldFollow;
+    }
+
+    setShouldLike(shouldLike) {
+        this.settings.shouldLike = shouldLike;
     }
 
     getRandomComment() {
@@ -147,26 +163,47 @@ module.exports = class InstaMatic {
          * This will allow stuff like Emoji and etc
          */
         await this.browser.evaluate(`document.querySelector('._p6oxf._6p9ga').click();`);
+        await this.sleep(1000);
         let nodes = await this.browser.getNodesByXPath(`//textarea[@placeholder = "Add a comment…"]`);
+        if (nodes.length < 1) {
+            logger.error('Failed getting comment input', { nodes });
+            return;
+        }
         await this.browser.dom.focus({ nodeId: nodes[0].nodeId });
         // Send the text's keys and an enter
         await this.browser.inputString(text + String.fromCharCode(13));
     }
 
     async follow() {
-        let number = await user.getFollowersNumber(this.browser);
-        console.log(number);
+        let { minimumFollowers, maximumFollowers, blacklist } = this.settings.followSettings;
 
-        let userName = await user.getUsername(this.browser);
-        console.log(userName);
-       
+        let username = await user.getUsername(this.browser);
+        logger.info(`Checking ${username}'s profile`);
+        if (blacklist.includes(username)) {
+            return false;
+        }
+        logger.info(`User ${username} is not blacklisted`);
+
+        let userFollowersNumber = await user.getFollowersNumber(this.browser);
+        if (minimumFollowers && userFollowersNumber < minimumFollowers) {
+            return false;
+        }
+        logger.info(`User has minimum followers of ${minimumFollowers}`);
+
+        if (maximumFollowers && userFollowersNumber > maximumFollowers) {
+            return false;
+        }
+        logger.info(`User has minimum followers of ${maximumFollowers}`);
+
         await user.follow(this.browser);
+        return true;
     }
 
     async profile_url_from_post() {
         let { result } = await this.browser.evaluate(`document.querySelector('._2g7d5.notranslate._iadoq').href;`);
         if (result.type != 'string') {
-            throw new Error('Couldn\'t find profile link');
+            logger.error('Could not find profile link', { result })
+            return '';
         }
         let profileLink = result.value;
         return profileLink;
@@ -174,24 +211,64 @@ module.exports = class InstaMatic {
 
     async interact_with_tags(tags, maxInteractions = 10, onInteracted) {
         for (let tag of tags) {
+            logger.info(`Checking tag ${tag}`);
             let posts = await this.getPostsForTag(tag, maxInteractions);
+            logger.info(`Found ${posts.length} posts for tag ${tag}`);
             for (let post of posts) {
+                logger.info(`Interacting with post ${post}`);
                 await this.browser.goTo(post);
-                await this.sleep(2000);
+                await this.sleep(5000);
                 if (this.settings.shouldLike) {
-                    await this.like();
-                    await this.sleep(500);
+                    logger.info('Should like');
+                    await this.saver.getLiked(post).then(async rows => {
+                        if (rows.length > 0) {
+                            logger.info('Post already liked, passing');
+                            return
+                        };
+                        logger.info('Liking the post');
+                        await this.like();
+                        this.saver.saveLiked(post);
+                        await this.sleep(500);
+                    });
+
                 }
                 if (this.settings.shouldComment) {
-                    await this.comment(this.getRandomComment());
-                    await this.sleep(500);
+                    logger.info('Should comment');
+                    await this.saver.getCommented(post).then(async rows => {
+                        if (rows.length > 0) {
+                            logger.info('Post already commented, passing');
+                            return
+                        };
+                        logger.info('Commenting on the post');
+                        await this.comment(this.getRandomComment());
+                        this.saver.saveCommented(post);
+                        await this.sleep(2000);
+                    })
                 }
                 if (this.settings.shouldFollow) {
+                    logger.info('Should follow');
                     let userProfile = await this.profile_url_from_post();
-                    await this.browser.goTo(userProfile);
-                    await this.sleep(2000);
-                    await this.follow();
-                    await this.browser.goBack();
+                    if (userProfile === "") {
+                        logger.info('Failed getting user profile link, skipping follow');
+                    } else {
+                        await this.browser.goTo(userProfile);
+                        await this.sleep(2000);
+                        let username = await user.getUsername(this.browser);
+                        await this.saver.getFollowed(username).then(async rows => {
+                            if (rows.length > 0) {
+                                logger.info('Already followed user, passing');
+                                return
+                            };
+                            logger.info('Considering to follow user');
+                            let didFollow = await this.follow();
+                            if (didFollow) {
+                                logger.info(`Starting following ${username}`);
+                                await this.sleep(1000);
+                                this.saver.saveFollowed(username);
+                            }
+                        });
+                        await this.browser.goBack();
+                    }
                 }
                 if (onInteracted) {
                     onInteracted();
