@@ -117,7 +117,8 @@ function spawnChrome(port) {
         });
 
         child.stderr.on('data', (data) => {
-            console.log(`stderr: ${data}`);
+        // Use winston into a file
+        //    console.log(`stderr: ${data}`);
         });
 
         child.on('error', (err) => {
