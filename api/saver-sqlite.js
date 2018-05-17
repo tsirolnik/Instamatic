@@ -33,6 +33,17 @@ module.exports = class SqliteSaver {
         this.saveToDB(post, 'liked');
     }
 
+    totalFollowed() {
+        return new Promise((resolve, reject) => {
+            let query = `SELECT COUNT(*) as total FROM followed'`;
+            this.db.get(query, (err, row) => {
+                if (err) return reject(err);
+                let { total } = row;
+                resolve(total);
+            });
+        });
+    }
+
     getByIdentifier(identifier, table, timestampQuery = undefined) {
         return new Promise((resolve, reject) => {
             let query = `SELECT * FROM ${table} WHERE identifier = '${identifier}'`;
