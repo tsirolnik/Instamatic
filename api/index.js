@@ -5,7 +5,8 @@ const readline = require('readline');
 const ChromeManager = require('./chrome');
 const constants = require('./constants');
 const loginFunctions = require('./login');
-const user = require('./user');
+const userPage = require('./user');
+const postPage = require('./post');
 const SqliteSaver = require('./saver-sqlite');
 
 const rl = readline.createInterface({
@@ -35,6 +36,8 @@ module.exports = class InstaMatic {
             followSettings: {
                 minimumFollowers: null,
                 maximumFollowers: 2500,
+                maxToFollow: 200,
+                followPercentage: 20,
                 blacklist: []
             }
         };
@@ -174,39 +177,37 @@ module.exports = class InstaMatic {
         await this.browser.inputString(text + String.fromCharCode(13));
     }
 
-    async follow() {
-        let { minimumFollowers, maximumFollowers, blacklist } = this.settings.followSettings;
-
-        let username = await user.getUsername(this.browser);
+    async follow(username, userProfile) {
+        let { minimumFollowers, maximumFollowers, blacklist, maxToFollow, followPercentage } = this.settings.followSettings;
         logger.info(`Checking ${username}'s profile`);
+        
+        let rows = await this.saver.getFollowed(username)
+        if (rows.length > 0) {
+            return { didFollow: false, err: 'Already followed user' };
+        }
+
+        await this.browser.goTo(userProfile);
+        await this.sleep(2000);
+
         if (blacklist.includes(username)) {
-            return false;
+            return { didFollow: false, err: 'blacklisted' };
         }
         logger.info(`User ${username} is not blacklisted`);
 
-        let userFollowersNumber = await user.getFollowersNumber(this.browser);
+        let userFollowersNumber = await userPage.getFollowersNumber(this.browser);
         if (minimumFollowers && userFollowersNumber < minimumFollowers) {
-            return false;
+            return { didFollow: false, err: 'Not minimal follow count' };
         }
         logger.info(`User has minimum followers of ${minimumFollowers}`);
 
         if (maximumFollowers && userFollowersNumber > maximumFollowers) {
-            return false;
+            return { didFollow: false, err: 'Above maxmimal follow count' };
         }
         logger.info(`User has minimum followers of ${maximumFollowers}`);
 
-        await user.follow(this.browser);
-        return true;
-    }
-
-    async profile_url_from_post() {
-        let { result } = await this.browser.evaluate(`document.querySelector('._2g7d5.notranslate._iadoq').href;`);
-        if (result.type != 'string') {
-            logger.error('Could not find profile link', { result })
-            return '';
-        }
-        let profileLink = result.value;
-        return profileLink;
+        await userPage.follow(this.browser);
+        await this.sleep(1000);
+        return { didFollow: true, err: undefined };
     }
 
     async interact_with_tags(tags, maxInteractions = 10, onInteracted) {
@@ -217,57 +218,52 @@ module.exports = class InstaMatic {
             for (let post of posts) {
                 logger.info(`Interacting with post ${post}`);
                 await this.browser.goTo(post);
-                await this.sleep(5000);
+                await this.sleep(3000);
                 if (this.settings.shouldLike) {
-                    logger.info('Should like');
-                    await this.saver.getLiked(post).then(async rows => {
-                        if (rows.length > 0) {
-                            logger.info('Post already liked, passing');
-                            return
-                        };
+                    logger.info(`Like process on ${post}`);
+                    let rows = await this.saver.getLiked(post)
+                    if (rows.length > 0) {
+                        logger.info('Post already liked, passing');
+                    } else {
                         logger.info('Liking the post');
                         await this.like();
                         this.saver.saveLiked(post);
                         await this.sleep(500);
-                    });
-
+                    }
                 }
                 if (this.settings.shouldComment) {
-                    logger.info('Should comment');
-                    await this.saver.getCommented(post).then(async rows => {
-                        if (rows.length > 0) {
-                            logger.info('Post already commented, passing');
-                            return
-                        };
+                    logger.info(`Comment process on ${post}`);
+                    let rows = await this.saver.getCommented(post)
+                    if (rows.length > 0) {
+                        logger.info('Post already commented, passing');
+                    } else {
                         logger.info('Commenting on the post');
                         await this.comment(this.getRandomComment());
                         this.saver.saveCommented(post);
                         await this.sleep(2000);
-                    })
+                    }
                 }
                 if (this.settings.shouldFollow) {
-                    logger.info('Should follow');
-                    let userProfile = await this.profile_url_from_post();
-                    if (userProfile === "") {
-                        logger.info('Failed getting user profile link, skipping follow');
+                    logger.info(`Follow process on ${post}`);
+                    let totalFollowed = await this.saver.totalFollowed();
+                    logger.info(`Total followed by now ${totalFollowed}`);
+                    if (totalFollowed > this.settings.followSettings.maxToFollow) {
+                        logger.info('Skipping follow, maximum followed');
                     } else {
-                        await this.browser.goTo(userProfile);
-                        await this.sleep(2000);
-                        let username = await user.getUsername(this.browser);
-                        await this.saver.getFollowed(username).then(async rows => {
-                            if (rows.length > 0) {
-                                logger.info('Already followed user, passing');
-                                return
-                            };
-                            logger.info('Considering to follow user');
-                            let didFollow = await this.follow();
+                        let userProfile = await postPage.userProfile(this.browser);
+                        if (userProfile === '') {
+                            logger.info('Failed getting user profile link, skipping follow');
+                        } else {
+                            let username = await postPage.username(this.browser);
+                            let { didFollow, err } = await this.follow(username, userProfile);
                             if (didFollow) {
-                                logger.info(`Starting following ${username}`);
-                                await this.sleep(1000);
+                                logger.info(`Followed ${username}`);
                                 this.saver.saveFollowed(username);
+                            } else {
+                                logger.info('Did not follow users', { reason: err });
                             }
-                        });
-                        await this.browser.goBack();
+                            await this.browser.goBack();
+                        }
                     }
                 }
                 if (onInteracted) {
