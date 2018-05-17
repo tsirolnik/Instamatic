@@ -6,6 +6,7 @@
   "dependencies": {
     "chrome-remote-interface": "^0.25.5",
     "robotjs": "^0.5.1",
+    "sqlite3": "^4.0.0",
     "winston": "^2.4.1"
   },
   "devDependencies": {},
