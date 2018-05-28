@@ -1,4 +1,12 @@
 const sqlite3 = require('sqlite3').verbose();
+const winston = require('winston');
+
+const logger = new (winston.Logger)({
+    transports: [
+        new (winston.transports.Console)()
+    ],
+    exitOnError: false
+});
 
 module.exports = class SqliteSaver {
 
@@ -10,7 +18,15 @@ module.exports = class SqliteSaver {
     }
 
     saveFollowed(account) {
-        this.saveToDB(account, 'followed');
+        return this.saveToDB(account, 'followed');
+    }
+
+    removeFollow(account) {
+        return this.removeFromDB(account, 'followed');
+    }
+
+    getAllFollowed(timestampQuery = undefined) {
+        return this.getAll('followed', timestampQuery);
     }
 
     getFollowed(account, timestampQuery = undefined) {
@@ -26,16 +42,16 @@ module.exports = class SqliteSaver {
     }
 
     saveCommented(post) {
-        this.saveToDB(post, 'commented');
+        return this.saveToDB(post, 'commented');
     }
 
     saveLiked(post) {
-        this.saveToDB(post, 'liked');
+        return this.saveToDB(post, 'liked');
     }
 
     totalFollowed() {
         return new Promise((resolve, reject) => {
-            let query = `SELECT COUNT(*) as total FROM followed'`;
+            let query = `SELECT COUNT(*) as total FROM followed`;
             this.db.get(query, (err, row) => {
                 if (err) return reject(err);
                 let { total } = row;
@@ -44,23 +60,61 @@ module.exports = class SqliteSaver {
         });
     }
 
-    getByIdentifier(identifier, table, timestampQuery = undefined) {
+    getAll(table, timestampQuery = undefined) {
+        logger.info('Getting all', { table, timestampQuery });
+        let params = [];
         return new Promise((resolve, reject) => {
-            let query = `SELECT * FROM ${table} WHERE identifier = '${identifier}'`;
+            let query = `SELECT * FROM ${table}`;
             if (timestampQuery) {
                 let { operator, timestamp } = timestampQuery;
-                query = query + ` timestamp ${operator} ${timestamp}`;
+                query = query + ` WHERE timestamp ${operator} ?`;
+                params.push(timestamp);
             }
-            this.db.all(query, (err, rows) => {
+            this.db.all(query, params, (err, rows) => {
                 if (err) return reject(err);
                 resolve(rows);
             });
         });
     }
 
+    getByIdentifier(identifier, table, timestampQuery = undefined) {
+        logger.info('Getting by identifier', { identifier, table, timestampQuery });
+        let params = [];
+        return new Promise((resolve, reject) => {
+            let query = `SELECT * FROM ${table} WHERE identifier = ?`;
+            params.push(identifier);
+            if (timestampQuery) {
+                let { operator, timestamp } = timestampQuery;
+                query = query + ` timestamp ${operator} ?`;
+                params.push(timestamp);
+            }
+            this.db.all(query, params, (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows);
+            });
+        });
+    }
+
+    removeFromDB(identifier, table) {
+        return new Promise((resolve, reject) => {
+            logger.info('Removing from database', { identifier, table });
+            let now = Date.now();
+            this.db.run(`DELETE FROM ${table} WHERE identifier = ?`, identifier, (res, err) => {
+                if (err) return reject(err);
+                resolve();
+            });
+        });
+    }
+
     saveToDB(identifier, table) {
-        let now = Date.now();
-        this.db.run(`INSERT INTO ${table} (identifier, timestamp) VALUES("${identifier}", ${now})`);
+        return new Promise((resolve, reject) => {
+            logger.info('Saving to database', { identifier, table });
+            let now = Date.now();
+            this.db.run(`INSERT INTO ${table} (identifier, timestamp) VALUES(?, ?)`, identifier, now, (res, err) => {
+                if (err) return reject(err);
+                resolve();
+            });
+        });
     }
 
 }
