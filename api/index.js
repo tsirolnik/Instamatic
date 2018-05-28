@@ -8,6 +8,7 @@ const loginFunctions = require('./login');
 const userPage = require('./user');
 const postPage = require('./post');
 const SqliteSaver = require('./saver-sqlite');
+const utils = require('./utils');
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -35,7 +36,7 @@ module.exports = class InstaMatic {
             shouldFollow: true,
             followSettings: {
                 minimumFollowers: null,
-                maximumFollowers: 2500,
+                maximumFollowers: 1500,
                 maxToFollow: 200,
                 followPercentage: 20,
                 blacklist: []
@@ -105,7 +106,13 @@ module.exports = class InstaMatic {
     }
 
     sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        logger.info('Sleeping', { ms, now: Date.now() });
+        return new Promise(resolve => {
+            setTimeout(() => {
+                logger.info('Slept', { ms, now: Date.now() });
+                resolve();
+            }, ms);
+        });
     }
 
     async getPostsForTag(tag, maxInteractions) {
@@ -180,34 +187,64 @@ module.exports = class InstaMatic {
     async follow(username, userProfile) {
         let { minimumFollowers, maximumFollowers, blacklist, maxToFollow, followPercentage } = this.settings.followSettings;
         logger.info(`Checking ${username}'s profile`);
-        
+
+        await this.browser.goTo(userProfile);
+        await this.sleep(2000);
+
+
         let rows = await this.saver.getFollowed(username)
         if (rows.length > 0) {
             return { didFollow: false, err: 'Already followed user' };
         }
 
-        await this.browser.goTo(userProfile);
-        await this.sleep(2000);
+        if (!utils.checkChance(followPercentage)) {
+            logger.info('Not following the user as per followPercentage', { followPercentage });
+            return { didFollow: false, err: 'Follow chance denied' };
+        }
 
         if (blacklist.includes(username)) {
             return { didFollow: false, err: 'blacklisted' };
         }
         logger.info(`User ${username} is not blacklisted`);
+        logger.info(`User ${username} has ${userFollowersNumber} followers`);
 
         let userFollowersNumber = await userPage.getFollowersNumber(this.browser);
+        logger.info(`User ${username} has ${userFollowersNumber} followers`);
+
         if (minimumFollowers && userFollowersNumber < minimumFollowers) {
             return { didFollow: false, err: 'Not minimal follow count' };
         }
-        logger.info(`User has minimum followers of ${minimumFollowers}`);
+        logger.info(`User is above minimum followers of ${minimumFollowers}`);
 
         if (maximumFollowers && userFollowersNumber > maximumFollowers) {
             return { didFollow: false, err: 'Above maxmimal follow count' };
         }
-        logger.info(`User has minimum followers of ${maximumFollowers}`);
+        logger.info(`User is below maximum followers of ${maximumFollowers}`);
 
         await userPage.follow(this.browser);
         await this.sleep(1000);
         return { didFollow: true, err: undefined };
+    }
+
+    async unfollowSince(hour) {
+        let followed = await this.saver.getAllFollowed({
+            timestamp: Date.now() - 1000 * 60 * 60 * hour,
+            operator: '<'
+        });
+
+        logger.info(`Trying to unfollowed ${followed.length} accounts`);
+        for (let i = 0; i < followed.length; i++) {
+            let followInfo = followed[i];
+            let username = followInfo.identifier;
+            logger.info(`Unfollowing ${username}`);
+            await this.browser.goTo('https://instagram.com/' + username);
+            await this.sleep(3000);
+            await userPage.unfollow(this.browser);
+            logger.info(`Unfollowed ${username}`);
+            this.saver.removeFollow(username);
+            logger.info(`Removed ${username} from database`);
+            await this.sleep(utils.randRange(2000, 5000));
+        };
     }
 
     async interact_with_tags(tags, maxInteractions = 10, onInteracted) {
@@ -250,7 +287,7 @@ module.exports = class InstaMatic {
                     if (totalFollowed > this.settings.followSettings.maxToFollow) {
                         logger.info('Skipping follow, maximum followed');
                     } else {
-                        let userProfile = await postPage.userProfile(this.browser);
+                        let userProfile = await postPage.userProfile(this.browser, logger);
                         if (userProfile === '') {
                             logger.info('Failed getting user profile link, skipping follow');
                         } else {
@@ -262,6 +299,7 @@ module.exports = class InstaMatic {
                             } else {
                                 logger.info('Did not follow users', { reason: err });
                             }
+                            logger.info('Navigating back');
                             await this.browser.goBack();
                         }
                     }
@@ -269,9 +307,11 @@ module.exports = class InstaMatic {
                 if (onInteracted) {
                     onInteracted();
                 }
+                logger.info('Navigating back');
                 await this.browser.goBack();
                 await this.sleep(2000);
             }
+            logger.info('Done with tag', { tag, totalPosts: posts.length })
         }
     }
 
