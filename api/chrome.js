@@ -49,7 +49,7 @@ module.exports = class ChromeManager {
     }
 
     async goBack() {
-        await this.runtime.evaluate({expression: 'history.back();'});
+        await this.runtime.evaluate({ expression: 'history.back();' });
     }
 
     async evaluate(js) {
@@ -67,39 +67,40 @@ module.exports = class ChromeManager {
         });
         let nodes = [];
         for (let i = 0; i < nodeIds.length; i++) {
-            let nodeData = {attributes:{}, value:''};
+            let nodeData = { attributes: {}, value: '' };
             let nodeId = nodeIds[i];
-            let {node} = await this.dom.describeNode({nodeId});
-            if(node.attributes) {
+            let { node } = await this.dom.describeNode({ nodeId });
+            if (node.attributes) {
                 let attributes = this.attrArrayToObject(node.attributes);
-                nodeData.attributes = attributes; 
+                nodeData.attributes = attributes;
             }
             nodeData.value = node.nodeValue;
             nodeData.nodeId = nodeId;
-            nodes.push(nodeData); 
+            nodes.push(nodeData);
         }
         return nodes;
     }
 
     attrArrayToObject(arr) {
         let obj = {};
-        for (let i = 0; i < arr.length/2; i+=2) {
+        for (let i = 0; i < arr.length / 2; i += 2) {
             const key = arr[i];
-            const val = arr[i+1];
+            const val = arr[i + 1];
             obj[key] = val;
         }
         return obj;
     }
 
     async inputString(input) {
-        input.split('').forEach(async char => {
+        for (let i = 0; i < input.length; i++) {
+            let char = input[i];
             await this.input.dispatchKeyEvent({ type: "char", text: char, unmodifiedText: char });
-        });
+        }
     }
 
     async sendKey(keyCode) {
-        await this.input.dispatchKeyEvent({ type: 'rawKeyDown',windowsVirtualKeyCode: keyCode  });
-        }
+        await this.input.dispatchKeyEvent({ type: 'rawKeyDown', windowsVirtualKeyCode: keyCode });
+    }
 }
 
 
@@ -117,8 +118,8 @@ function spawnChrome(port) {
         });
 
         child.stderr.on('data', (data) => {
-        // Use winston into a file
-        //    console.log(`stderr: ${data}`);
+            // Use winston into a file
+            //    console.log(`stderr: ${data}`);
         });
 
         child.on('error', (err) => {
