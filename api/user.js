@@ -1,11 +1,11 @@
 module.exports = {
 
-    getFollowersNumber: async function (browser) {
-        let nodes = await browser.getNodesByXPath(`//span[@class="_fd86t "]/text()`);
-        if (nodes.length === 0) {
-            throw new Error('Could not get user total followers');
+    getFollowersCount: async function (browser) {
+        let { result } = await browser.evaluate(`document.evaluate('string(//span[@class="g47SY "]/@title)', document, null, XPathResult.ANY_TYPE, null).stringValue;`);
+        if(result.type != 'string') {
+            throw new Error('Could not get followers count');
         }
-        let followersString = nodes[1].value;
+        let followersString = result.value;
         let followers = Number(followersString.replace(/,/g, ''));
         return followers;
     },
@@ -17,11 +17,11 @@ module.exports = {
     },
 
     follow: async function (browser) {
-        await browser.evaluate(`document.querySelector('._qv64e._gexxb._r9b8f._njrw0').click();`);
+        await browser.evaluate(`document.evaluate('//button[contains(child::text(), \"Follow\")]', document, null, XPathResult.ANY_TYPE, null).iterateNext().click();`);
     },
 
     unfollow: async function (browser) {
-        await browser.evaluate(`cument.querySelector('._qv64e._t78yp._r9b8f._njrw0').click();`);
+        await browser.evaluate(`document.evaluate('//button[contains(child::text(), \"Following\")]', document, null, XPathResult.ANY_TYPE, null).iterateNext().click();`);
     }
 
 }
