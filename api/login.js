@@ -1,3 +1,6 @@
+const utils = require('./utils');
+
+
 module.exports = {
 
     clickLogin: async function (browser) {
@@ -18,7 +21,7 @@ module.exports = {
         const setUsernameInput = `document.querySelector('input[name="username"]').focus()`;
         await browser.evaluate(setUsernameInput);
         await browser.inputString(username);
-        await sleep(1000);
+        await utils.sleep(1000);
         const setPasswordInput = `document.querySelector('input[name="password"]').focus()`;
         var { result } = await browser.evaluate(setPasswordInput);
         await browser.inputString(password);
