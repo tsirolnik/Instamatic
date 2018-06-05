@@ -38,7 +38,7 @@ module.exports = class InstaMatic {
                 minimumFollowers: null,
                 maximumFollowers: 1500,
                 maxToFollow: 200,
-                followPercentage: 20,
+                followPercentage: 30,
                 blacklist: []
             }
         };
@@ -53,7 +53,7 @@ module.exports = class InstaMatic {
                 if (this.wasLoaded) return;
                 this.wasLoaded = true;
                 logger.info('Load event fired');
-                await this.sleep(5000);
+                await utils.sleep(5000);
                 onReady(this);
             });
         });
@@ -66,9 +66,10 @@ module.exports = class InstaMatic {
             return true;
         }
         await loginFunctions.clickLogin(this.browser);
+        await utils.sleep(2000);
         await loginFunctions.setLoginDetailsOnLogin(this.settings.username, this.settings.password, this.browser);
         await loginFunctions.submitLogin(this.browser);
-        await this.sleep(5000);
+        await utils.sleep(5000);
         if (await loginFunctions.isLoggedIn(this.settings.username, this.browser)) {
             logger.info('Logged in successfuly');
             return true;
@@ -84,7 +85,7 @@ module.exports = class InstaMatic {
                     let code = await this.userInput('Insert Instagram code:');
                     logger.info('post-input');
                     await loginFunctions.inputCode(code, this.browser);
-                    await this.sleep(1500);
+                    await utils.sleep(1500);
                     await loginFunctions.validateSecurityCode(this.browser);
                     return true;
                 }
@@ -105,24 +106,14 @@ module.exports = class InstaMatic {
         })
     }
 
-    sleep(ms) {
-        logger.info('Sleeping', { ms, now: Date.now() });
-        return new Promise(resolve => {
-            setTimeout(() => {
-                logger.info('Slept', { ms, now: Date.now() });
-                resolve();
-            }, ms);
-        });
-    }
-
     async getPostsForTag(tag, maxInteractions) {
         await this.browser.goTo(constants.INSTAGRAM_URL + '/explore/tags/' + tag)
-        await this.sleep(2000);
+        await utils.sleep(2000);
         for (let i = 0; i < maxInteractions / 10; i++) {
             const { result } = await this.browser.evaluate(`window.scrollTo(0, document.body.scrollHeight);`);
-            await this.sleep(500);
+            await utils.sleep(500);
         }
-        await this.sleep(3000);
+        await utils.sleep(3000);
         let nodes = await this.browser.getNodesByXPath('//main/article/div[2]/div/div/div/a');
         let photos = [];
         for (let node of nodes) {
@@ -163,7 +154,7 @@ module.exports = class InstaMatic {
     }
 
     async like() {
-        await this.browser.evaluate(`document.querySelector('._eszkz._l9yih').click();`);
+        await this.browser.evaluate(`document.evaluate('//span[contains(child::text(), \"Like\")]', document, null, XPathResult.ANY_TYPE, null).iterateNext().click();`);
     }
 
     async comment(text) {
@@ -173,7 +164,7 @@ module.exports = class InstaMatic {
          * This will allow stuff like Emoji and etc
          */
         await this.browser.evaluate(`document.querySelector('._p6oxf._6p9ga').click();`);
-        await this.sleep(1000);
+        await utils.sleep(1000);
         let nodes = await this.browser.getNodesByXPath(`//textarea[@placeholder = "Add a comment…"]`);
         if (nodes.length < 1) {
             logger.error('Failed getting comment input', { nodes });
@@ -189,13 +180,16 @@ module.exports = class InstaMatic {
         logger.info(`Checking ${username}'s profile`);
 
         await this.browser.goTo(userProfile);
-        await this.sleep(2000);
+        await utils.sleep(2000);
 
 
         let rows = await this.saver.getFollowed(username)
         if (rows.length > 0) {
             return { didFollow: false, err: 'Already followed user' };
         }
+
+        let userFollowersNumber = await userPage.getFollowersCount(this.browser);
+        logger.info(`User ${username} has ${userFollowersNumber} followers`);
 
         if (!utils.checkChance(followPercentage)) {
             logger.info('Not following the user as per followPercentage', { followPercentage });
@@ -206,10 +200,6 @@ module.exports = class InstaMatic {
             return { didFollow: false, err: 'blacklisted' };
         }
         logger.info(`User ${username} is not blacklisted`);
-        logger.info(`User ${username} has ${userFollowersNumber} followers`);
-
-        let userFollowersNumber = await userPage.getFollowersNumber(this.browser);
-        logger.info(`User ${username} has ${userFollowersNumber} followers`);
 
         if (minimumFollowers && userFollowersNumber < minimumFollowers) {
             return { didFollow: false, err: 'Not minimal follow count' };
@@ -222,7 +212,7 @@ module.exports = class InstaMatic {
         logger.info(`User is below maximum followers of ${maximumFollowers}`);
 
         await userPage.follow(this.browser);
-        await this.sleep(1000);
+        await utils.sleep(1000);
         return { didFollow: true, err: undefined };
     }
 
@@ -238,12 +228,12 @@ module.exports = class InstaMatic {
             let username = followInfo.identifier;
             logger.info(`Unfollowing ${username}`);
             await this.browser.goTo('https://instagram.com/' + username);
-            await this.sleep(3000);
+            await utils.sleep(3000);
             await userPage.unfollow(this.browser);
             logger.info(`Unfollowed ${username}`);
             this.saver.removeFollow(username);
             logger.info(`Removed ${username} from database`);
-            await this.sleep(utils.randRange(2000, 5000));
+            await utils.sleep(utils.randRange(2000, 5000));
         };
     }
 
@@ -255,7 +245,8 @@ module.exports = class InstaMatic {
             for (let post of posts) {
                 logger.info(`Interacting with post ${post}`);
                 await this.browser.goTo(post);
-                await this.sleep(3000);
+                await utils.sleep(3000);
+                await utils.sleep(utils.randRange(2000, 7000));
                 if (this.settings.shouldLike) {
                     logger.info(`Like process on ${post}`);
                     let rows = await this.saver.getLiked(post)
@@ -265,7 +256,7 @@ module.exports = class InstaMatic {
                         logger.info('Liking the post');
                         await this.like();
                         this.saver.saveLiked(post);
-                        await this.sleep(500);
+                        await utils.sleep(500);
                     }
                 }
                 if (this.settings.shouldComment) {
@@ -277,7 +268,7 @@ module.exports = class InstaMatic {
                         logger.info('Commenting on the post');
                         await this.comment(this.getRandomComment());
                         this.saver.saveCommented(post);
-                        await this.sleep(2000);
+                        await utils.sleep(2000);
                     }
                 }
                 if (this.settings.shouldFollow) {
@@ -307,9 +298,10 @@ module.exports = class InstaMatic {
                 if (onInteracted) {
                     onInteracted();
                 }
+                logger.info('Done with post');
                 logger.info('Navigating back');
                 await this.browser.goBack();
-                await this.sleep(2000);
+                await utils.sleep(2000);
             }
             logger.info('Done with tag', { tag, totalPosts: posts.length })
         }
